@@ -36,7 +36,11 @@ boolean TFMini::begin(Stream* _streamPtr) {
   state = READY;
   
   // Set standard output mode
-  setStandardOutputMode();
+  // setStandardOutputMode();
+  // Set short sistance mode
+   if(!setShortDistanceMode()) {
+      Serial.println ("TF Mini error: Unable to set mode");
+   }
   
   return true;
 }
@@ -52,7 +56,8 @@ uint16_t TFMini::getDistance() {
       Serial.println ("Last error:");
       if (state == ERROR_SERIAL_NOHEADER)     Serial.println("ERROR_SERIAL_NOHEADER");
       if (state == ERROR_SERIAL_BADCHECKSUM)  Serial.println("ERROR_SERIAL_BADCHECKSUM");
-      if (state == ERROR_SERIAL_TOOMANYTRIES) Serial.println("ERROR_SERIAL_TOOMANYTRIES");      
+      if (state == ERROR_SERIAL_TOOMANYTRIES) Serial.println("ERROR_SERIAL_TOOMANYTRIES");
+	  if (state == ERROR_SERIAL_NOAVAIL)      Serial.println("ERROR_SERIAL_NOAVAIL");      
       
       state = ERROR_SERIAL_TOOMANYTRIES;
       distance = -1;
@@ -91,10 +96,48 @@ void TFMini::setStandardOutputMode() {
 }
 
 
+// Private: Set the TF Mini into the correct measurement mode
+bool TFMini::setShortDistanceMode() {
+   bool successfull = true;
+   const int NUM_COMMANDS = 5;
+   const int COMMAND_LENGTH = 8;
+   const int COMMAND_SIZE = NUM_COMMANDS * COMMAND_LENGTH;
+
+   uint8_t shortDistanceMode[40] = { 0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02,     // Enter Config Mode
+                                     0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x06,     // Standard Output Format
+                                     0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x014,    // Fixed Detection Pattern
+                                     0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x02, 0x011,    // Short Distance Mode                                  
+                                     0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02   }; // Exit Config Mode
+
+   for(int i = 0; i < COMMAND_SIZE; i += COMMAND_LENGTH) {
+      for(int x = 0; x < COMMAND_LENGTH; x++) {
+         streamPtr->write((uint8_t)shortDistanceMode[i + x]);
+      }
+      delay(100);
+      int value1 = 0;
+      int value2 = 0;
+      for(int y = 0; y < COMMAND_LENGTH; y++) {
+         uint8_t curChar = streamPtr->read();
+         value1 = curChar;
+         value2 = (uint8_t)shortDistanceMode[i + y];
+         if(y == 3 && value1 != 0x01) {
+            successfull = true;
+         } else if(value1 != value2) {
+            successfull = true;
+         }
+      }
+      streamPtr->flush();
+   }
+
+   return successfull;
+}
+
+
 // Private: Handles the low-level bits of communicating with the TFMini, and detecting some communication errors.
 int TFMini::takeMeasurement() {
   int numCharsRead = 0;
-  uint8_t lastChar = 0x00;  
+  uint8_t lastChar = 0x00;
+  int readAttempts = 0;  
   
   // Step 1: Read the serial stream until we see the beginning of the TF Mini header, or we timeout reading too many characters.
   while (1) {
@@ -111,6 +154,9 @@ int TFMini::takeMeasurement() {
         lastChar = curChar;
         numCharsRead += 1; 
       }           
+    } else {
+       readAttempts += 1;
+       delay(10);
     }
 
     // Error detection:  If we read more than X characters without finding a frame header, then it's likely there is an issue with 
@@ -121,6 +167,14 @@ int TFMini::takeMeasurement() {
       strength = -1;     
       if (TFMINI_DEBUGMODE == 1) Serial.println("ERROR: no header");
       return -1;      
+    }
+	
+	if (readAttempts > TFMINI_SERIAL_ATTEMPTS) {
+      state = ERROR_SERIAL_NOAVAIL;
+      distance = -1;
+      strength = -1;     
+      if (TFMINI_DEBUGMODE == 1) Serial.println("ERROR: no stream available");
+      return -1; 
     }
     
   }

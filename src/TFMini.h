@@ -35,12 +35,14 @@ derived from this software without specific prior written permission.
 // Timeouts
 #define TFMINI_MAXBYTESBEFOREHEADER       30
 #define TFMINI_MAX_MEASUREMENT_ATTEMPTS   10
+#define TFMINI_SERIAL_ATTEMPTS            10
 
 // States
 #define READY                             0
 #define ERROR_SERIAL_NOHEADER             1
 #define ERROR_SERIAL_BADCHECKSUM          2
 #define ERROR_SERIAL_TOOMANYTRIES         3
+#define ERROR_SERIAL_NOAVAIL              4
 #define MEASUREMENT_OK                    10
 
 
@@ -66,6 +68,7 @@ class TFMini {
     
     // Low-level communication
     void setStandardOutputMode();
+	bool setShortDistanceMode();
     int takeMeasurement();
     
     
